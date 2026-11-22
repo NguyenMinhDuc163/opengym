@@ -1,0 +1,96 @@
+default_platform(:ios)
+
+require "json"
+
+APP_IDENTIFIER = "com.nguyenduc.gym"
+PROJECT = "App.xcodeproj"
+WORKSPACE = "App.xcworkspace"
+SCHEME = "App"
+
+def mobile_version
+  package_json = File.expand_path("../../package.json", __dir__)
+  JSON.parse(File.read(package_json)).fetch("version")
+end
+
+def match_provisioning_profile_name!
+  profiles = Actions.lane_context[
+    SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING
+  ]
+
+  unless profiles.is_a?(Hash)
+    UI.user_error!("Fastlane Match did not provide provisioning profile mapping.")
+  end
+
+  profile_name = profiles[APP_IDENTIFIER].to_s.strip
+  if profile_name.empty?
+    UI.user_error!("Fastlane Match did not provide an App Store profile for #{APP_IDENTIFIER}.")
+  end
+
+  profile_name
+end
+
+platform :ios do
+  before_all do
+    # Fastlane still loads Logger implicitly in a few paths on current Ruby versions.
+    ENV["RUBYOPT"] = (["-rlogger"] + ENV.fetch("RUBYOPT", "").split).uniq.join(" ")
+  end
+
+  desc "Build a signed IPA and upload it to TestFlight"
+  lane :beta do
+    setup_ci
+
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APP_STORE_CONNECT_KEY_ID"),
+      issuer_id: ENV.fetch("APP_STORE_CONNECT_ISSUER_ID"),
+      key_filepath: ENV.fetch("APP_STORE_CONNECT_API_KEY_KEY_FILEPATH")
+    )
+
+    match(
+      type: "appstore",
+      platform: "ios",
+      app_identifier: APP_IDENTIFIER,
+      readonly: true,
+      api_key: api_key
+    )
+
+    profile_name = match_provisioning_profile_name!
+    team_id = ENV.fetch("IOS_TEAM_ID")
+    update_code_signing_settings(
+      path: PROJECT,
+      use_automatic_signing: false,
+      team_id: team_id,
+      targets: [SCHEME],
+      build_configurations: ["Release"],
+      code_sign_identity: "Apple Distribution",
+      profile_name: profile_name
+    )
+
+    increment_version_number(xcodeproj: PROJECT, version_number: mobile_version)
+    increment_build_number(xcodeproj: PROJECT, build_number: ENV.fetch("IOS_BUILD_NUMBER"))
+
+    build_app(
+      workspace: WORKSPACE,
+      scheme: SCHEME,
+      configuration: "Release",
+      export_method: "app-store",
+      clean: true,
+      output_directory: "../build/ios/ipa",
+      output_name: "openGym.ipa",
+      skip_profile_detection: true,
+      export_options: {
+        method: "app-store",
+        signingStyle: "manual",
+        teamID: team_id,
+        provisioningProfiles: { APP_IDENTIFIER => profile_name }
+      },
+      xcargs: "DEVELOPMENT_TEAM=#{team_id} CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='Apple Distribution' PROVISIONING_PROFILE_SPECIFIER='#{profile_name}'"
+    )
+
+    upload_to_testflight(
+      api_key: api_key,
+      app_identifier: APP_IDENTIFIER,
+      changelog: ENV.fetch("TESTFLIGHT_WHAT_TO_TEST", "Personal TestFlight build"),
+      skip_waiting_for_build_processing: true
+    )
+  end
+end

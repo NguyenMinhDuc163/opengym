@@ -10,9 +10,15 @@ data/
 
 # Build output / deps
 frontend/dist/
+frontend/build/
 node_modules/
 *.log
 .DS_Store
+
+# Fastlane local reports (signing credentials always stay outside the repository)
+frontend/ios/fastlane/report.xml
+frontend/ios/fastlane/Preview.html
+frontend/ios/fastlane/test_output/
 
 # Local AI-assistant tooling — contributor's own setup, not part of the app
 .claude/
