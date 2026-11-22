@@ -78,15 +78,16 @@ jobs:
         run: npm ci
         working-directory: frontend
 
+      # `cap sync ios` invokes `pod install`, so this must run before sync.
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+          working-directory: frontend/ios
+
       - name: Build and sync the Capacitor iOS app
         run: npm run build:mobile
         working-directory: frontend
-
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '4.0'
-          bundler-cache: true
-          working-directory: frontend/ios
 
       - name: Install CocoaPods
         run: bundle exec pod install
